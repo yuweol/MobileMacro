@@ -3,12 +3,7 @@ import csv, os
 from yuweol_raw import Raw
 
 def prepare_output(path, name):
-	if path.endswith("."):
-		output = path + os.sep + name + ".csv"
-	else:
-		output = path + "." + os.sep + name + ".csv"
-		
-	return open(output, "w")
+	return open(path + os.sep + name + ".csv", "w")
 	
 def write_csv(output, title, data):
 	writer = csv.writer(output)
