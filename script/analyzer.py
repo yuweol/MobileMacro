@@ -1,232 +1,156 @@
-from yuweol_raw import Raw
-from scipy import spatial
-import numpy, math
+#!/usr/bin/env
+from cluster import TimeCluster
+from chart import Chart
 
-from config import Config
+import os
 
-class AnalyzerNode():
-	def __init__(self):
-		self.region = -1
-		self.region_distance = -1
-		self.region_direction = -1
-		
-class BurstNode:
-	def __init__(self):
-		self.starttime = -1.0
-		self.finishtime = -1.0
-		self.cnt = 0
-			
+def clusteredDensity(time_slot, r):
+    return TimeCluster(r, time_slot).density()
+
+def fitSize((x1, y1), (x2, y2), toMin=True):
+    if toMin:
+        if len(x1) > len(x2):
+            x1 = x1[:len(x2)]
+            y1 = y1[:len(y2)]
+        else:
+            x2 = x2[:len(x1)]
+            y2 = y2[:len(y1)]
+    else:
+        if len(x1) < len(x2):
+            for i in range(0, len(x2) - len(x1)):
+                x1.append(None)
+                y1.append(None)
+        else:
+            for i in range(0, len(x1) - len(x2)):
+                x2.append(None)
+                y2.append(None)
+    return (x1, y1), (x2, y2)
+
+def movingAverage(y):
+    ma = []
+    for i in range(0, len(y)):
+        ma.append(float("{0:.2f}".format(float(sum(y[:i+1]))/float(i+1))))
+    return ma
+
+def activation(y, ma):
+    a = []
+    for i in range(0, len(ma)):
+        if y[i] >= ma[i]:
+            a.append(1)
+        else:
+            a.append(0)
+    return a
+
+def score(a, fun):
+    s = [1, ]
+    factor = 1
+
+    for i in range(1, len(a)):
+        if a[i] == 1:
+            s.append(s[-1] + factor)
+            factor = fun(factor)
+        else:
+            s.append(s[-1])
+            factor = 1
+
+    return s
+
+def budget(a, y, fun, max_budget):
+    b = [max_budget, ]
+    factor = 0
+
+    for i in range(1, len(a)):
+        if a[i] == 1:
+            factor = fun(factor)
+            if factor >= max_budget:
+                factor = max_budget
+            next_budget = b[-1] - y[i] + factor
+            if next_budget >= max_budget:
+                next_budget = max_budget
+            b.append(next_budget)
+        else:
+            factor = 0
+            b.append(b[-1] - y[i])
+
+    return b
+
 class Analyzer():
-	def __init__(self, raw):
-		self.raw = raw
-		self.nodes = []
-		self.bursts = []
-		for i in range(0, len(raw.nodes)):
-			self.nodes.append(AnalyzerNode())
-			
-	#Only burst touches will be remained
-	def normalize_burst_touch(self, max):
-		for i in reversed(range(1, len(self.raw.nodes))):
-			if self.raw.nodes[i].time - self.raw.nodes[i-1].time >= max:
-				self.raw.nodes.pop(i)
+    def __init__(self, path):
+        self.path = path
 
-	#Devide screen into X regions, and allocate a region to each touch
-	#based on their touch coordinates. And then calcaultes the distance
-	#between each touch regions based on Manhatten distance
-	def set_region_label(self, size_x, size_y):
-		max_x = int(Config.max_coord, 16)
-		max_y = int(Config.max_coord, 16)
-		unit_x = math.ceil(float(max_x / size_x))
-		unit_y = math.ceil(float(max_y / size_y))
-		
-		for i in range(0, len(self.raw.nodes)):
-			#Set region
-			region_x = int(self.raw.nodes[i].x / unit_x)
-			if region_x == unit_x:
-				region_x -= 1
-			region_y = int(self.raw.nodes[i].y / unit_y)
-			if region_y == unit_y:
-				region_y -= 1
-			
-			if (region_x >= size_x) or (region_y >= size_y):
-				raise RuntimeError("unexpected")
+    def touch_density(self, time_slot, r1, r1_type, r2, r2_type):
+        x1, y1 = clusteredDensity(time_slot, r1)
+        x2, y2 = clusteredDensity(time_slot, r2)
 
-			region = (region_y * size_x) + region_x
-			self.nodes[i].region = region
-			if i > 0:
-				#Set region distance
-				if self.nodes[i-1].region >= self.nodes[i].region:
-					big = self.nodes[i-1].region
-					small = self.nodes[i].region
-				else:
-					big = self.nodes[i].region
-					small = self.nodes[i-1].region
-				distance = int((big - small) / size_x)
-				small += (distance * size_x)
-				self.nodes[i].region_distance = distance + big - small
-				
-				#Set region direction
-				lFlag = False
-				rFlag = False
-				xFlag = False
-				tFlag = False
-				bFlag = False
-				yFlag = False
-				
-				prevYIdx = int(self.nodes[i-1].region / size_x)
-				curYIdx = int(self.nodes[i].region / size_x)
-				if curYIdx > prevYIdx:
-					bFlag = True
-				elif curYIdx == prevYIdx:
-					yFlag = True
-				else:
-					tFlag = True
-				
-				prevXIdx = self.nodes[i-1].region % size_x
-				curXIdx = self.nodes[i].region % size_x
-				if curXIdx > prevXIdx:
-					rFlag = True
-				elif curXIdx == prevXIdx:
-					xFlag = True
-				else:
-					lFlag = True
-					
-				if lFlag and tFlag:
-					self.nodes[i].region_direction = 0
-				elif xFlag and tFlag:
-					self.nodes[i].region_direction = 1
-				elif rFlag and tFlag:
-					self.nodes[i].region_direction = 2
-				elif lFlag and yFlag:
-					self.nodes[i].region_direction = 3
-				elif xFlag and yFlag:
-					self.nodes[i].region_direction = 4
-				elif rFlag and yFlag:
-					self.nodes[i].region_direction = 5
-				elif lFlag and bFlag:
-					self.nodes[i].region_direction = 6
-				elif xFlag and bFlag:
-					self.nodes[i].region_direction = 7
-				elif rFlag and bFlag:
-					self.nodes[i].region_direction = 8
-				else:
-					raise RuntimeError("unexpected")
-			else:
-				#Set region 
-				self.nodes[i].region_distance = 0
-				
-				#Set region direcition
-				self.nodes[i].region_direction = 0
-				
-	#Analzye touch intervals between most clicked coordinates
-	def analyze_interval_most_clicked_coord(self):
-		maxcoords = self.analyze_coord_most_clicked()
-		
-		maxinterval = 0
-		maxcoord = None
-		for maxcoord in maxcoords:
-			intervals = analyze_interval_coord(maxcoord)
-			values = list(intervals.values())
-			values.sort()
-			localmaxinterval = values[0]
-			localmaxcoord = None
-			for key in intervals.keys():
-				if interval[key] == maxinterval:
-					localmaxcoord = key
-					break
-			if localmaxinterval > maxinterval:
-				maxcoord = localmaxcoord
-			
-		return maxcoord, maxinterval
-		
-	#Analyze touch coordinates of most clickced coordinates
-	def analyze_coord_most_clicked(self):
-		temp = {}
-		for i in range(0, len(self.vectors.vectors)):
-			key = self.vectors.vectors[i].coord
-			try:
-				temp[key] += 1
-			except KeyError:
-				temp[key] = 1
-				
-		values = list(temp.values())
-		maxval = values[0]
-		
-		maxcoords = []
-		for key in temp.keys():
-			if temp[key] == maxval:
-				maxcoords.append(key)
-				
-		return maxcoords
-	
-	#Analyze interval between a specific touches
-	def analyze_interval_coord(self, coord):
-		result = {}
-		prevTime = 0
-		for i in range(0, len(self.vectors.vectors)):
-			if coord == self.vectors.vectors[i].coord:
-				if prevTime == 0:
-					interval = 0
-				else:
-					interval = float("{0:.2f}".format(self.vectors.vectors[i].time)) - prevTime
-				try:
-					result[interval] += 1
-				except KeyError:
-					result[interval] = 1
-		return result
-			
-	#Get interval distribution between every touches
-	def get_interval_distribution(self):
-		nodes = self.vectors.vectors
-		result = {}
-		result[0] = 1
-		
-		for i in range(1, len(nodes)):
-			interval = float("{0:.2f}".format(nodes[i].time - nodes[i-1].time))
-			try:
-				result[interval] += 1
-			except KeyError:
-				result[interval] = 1
-		return result
-		
-	#Get touch distribution only if the same coordinates
-	def get_interval_distribution_with_same_coord(self):
-		nodes = self.vectors.vectors
-		temp = {}
-		
-		for i in range(0, len(nodes)):
-			x = int(nodes[i].coord[0], 16)
-			y = int(nodes[i].coord[1], 16)
-			key = (x, y)
-			try:
-				prevTime = temp[key][0]
-			except KeyError:
-				prevTime = 0
-			
-			try:
-				internalM = temp[key][1]
-			except KeyError:
-				internalM = {}
-				
-			if prevTime == 0:
-				interval = 0
-			else:
-				interval = nodes[i].time - prevTime
-			
-			try:
-				internalM[interval] += 1
-			except KeyError:
-				internalM[interval] = 1
-			
-			temp[key] = (prevTime, internalM)
-		
-		result = {}
-		for x,y in list(temp.keys()):
-			for interval in list(temp[(x,y)][1].keys()):
-				key = (x, y, interval)
-				try:
-					result[key] += 1
-				except KeyError:
-					result[key] = 1
+        (x1, y1), (x2, y2) = fitSize((x1, y1), (x2, y2), toMin=True)
 
-		return result
+        ma1 = movingAverage(y1)
+        ma2 = movingAverage(y2)
+
+        t1 = Chart.trace_generator(x1, y1, "lines", r1_type)
+        t2 = Chart.trace_generator(x1, ma1, "lines", r1_type + "_average")
+        t3 = Chart.trace_generator(x2, y2, "lines", r2_type)
+        t4 = Chart.trace_generator(x2, ma2, "line", r2_type + "_average")
+
+        filepath = self.path + os.sep + "density(" + str(time_slot) + ").html"
+        Chart.draw_simpleLine(filepath, [t1, t2, t3, t4])
+
+    def touch_activation(self, time_slot, r1, r1_type, r2, r2_type):
+        x1, y1 = clusteredDensity(time_slot, r1)
+        x2, y2 = clusteredDensity(time_slot, r2)
+
+        (x1, y1), (x2, y2) = fitSize((x1, y1), (x2, y2), toMin=True)
+
+        ma1 = movingAverage(y1)
+        ma2 = movingAverage(y2)
+
+        a1 = activation(y1, ma1)
+        a2 = activation(y2, ma2)
+
+        t1 = Chart.trace_generator(x1, a1, "lines", r1_type + "_activation")
+        t2 = Chart.trace_generator(x2, a2, "lines", r2_type + "_activation")
+
+        filepath = self.path + os.sep + "activation(" + str(time_slot) + ").html"
+        Chart.draw_simpleLine(filepath, [t1, t2])
+
+    def score_rest(self, time_slot, fun, r1, r1_type, r2, r2_type):
+        x1, y1 = clusteredDensity(time_slot, r1)
+        x2, y2 = clusteredDensity(time_slot, r2)
+
+        (x1, y1), (x2, y2) = fitSize((x1, y1), (x2, y2), toMin=True)
+
+        ma1 = movingAverage(y1)
+        ma2 = movingAverage(y2)
+
+        a1 = activation(y1, ma1)
+        a2 = activation(y2, ma2)
+
+        s1 = score(a1, fun)
+        s2 = score(a2, fun)
+
+        t1 = Chart.trace_generator(x1, s1, "lines", r1_type + "_scorerest")
+        t2 = Chart.trace_generator(x2, s2, "lines", r2_type + "_scorerest")
+
+        filepath = self.path + os.sep + "score(" + str(time_slot) + ").html"
+        Chart.draw_simpleLine(filepath, [t1, t2])
+
+    def budget(self, time_slot, max_budget, fun, r1, r1_type, r2, r2_type):
+        x1, y1 = clusteredDensity(time_slot, r1)
+        x2, y2 = clusteredDensity(time_slot, r2)
+
+        (x1, y1), (x2, y2) = fitSize((x1, y1), (x2, y2), toMin=True)
+
+        ma1 = movingAverage(y1)
+        ma2 = movingAverage(y2)
+
+        a1 = activation(y1, ma1)
+        a2 = activation(y2, ma2)
+
+        b1 = budget(a1, y1, fun, max_budget)
+        b2 = budget(a2, y2, fun, max_budget)
+
+        t1 = Chart.trace_generator(x1, b1, "lines", r1_type + "_scorerest")
+        t2 = Chart.trace_generator(x2, b2, "lines", r2_type + "_scorerest")
+
+        filepath = self.path + os.sep + "budget(" + str(time_slot) + ").html"
+        Chart.draw_simpleLine(filepath, [t1, t2])
