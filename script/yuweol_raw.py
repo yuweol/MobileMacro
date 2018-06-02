@@ -1,4 +1,4 @@
-import sys, numpy
+import numpy, math
 
 from config import Config
 from yuweol_parser import Parser
@@ -8,9 +8,10 @@ class RawNode():
 		self.time = time
 		self.x = int(x, 16)
 		self.y = int(y, 16)
+		self.region = -1
 
 	def __str__(self):
-		msg = "[" + str(self.time) + "] - (" + self.coord[0] + ", " + self.coord[1] + ")"
+		msg = "[" + str(self.time) + "] - (" + str(self.x) + ", " + str(self.y) + ") [" + str(self.region) + "]"
 		return msg
 		
 	def coord_normalize(self, coord):
@@ -220,21 +221,22 @@ class Raw():
 					RawNode(x_time, x_coord, token.value))
 				x_coord = None
 			i += 1
+
+	def setRegion(self, size_x, size_y):
+		max_x = int(Config.max_coord, 16)
+		max_y = int(Config.max_coord, 16)
+		unit_x = math.ceil(float(max_x / size_x))
+		unit_y = math.ceil(float(max_y / size_y))
+		for i in range(0, len(self.nodes)):
+			region_x = int(self.nodes[i].x / unit_x)
+			if region_x == unit_x:
+				region_x -= 1
+			region_y = int(self.nodes[i].y / unit_y)
+			if region_y == unit_y:
+				region_y -= 1
 			
-	def size(self):
-		return len(self.vectors)
-		
-	def get(self, index):
-		return self.vectors[index]
-		
-	def format_asc(self, start, end):
-		msg = ""
-		for i in range(start, end):
-			msg += self.vectors[i].format_asc()
-		return msg
-		
-	def append(self, vector):
-		self.vectors.append(vector)
-		
-	def shrink(self, idx):
-		self.vectors = self.vectors[:idx]
+			if (region_x >= size_x) or (region_y >= size_y):
+				raise RuntimeError("unexpected")
+
+			region = (region_y * size_x) + region_x
+			self.nodes[i].region = region
