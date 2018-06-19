@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 
-import sys
+import sys, os
 
 from yuweol_raw import Raw
 from analyzer import Analyzer
+from config import Config
 
 RESULT_DIR="result"
 
@@ -50,32 +51,66 @@ def draw_similarities_only_activated(time_slot, min_touch, regionSize, r1, r1_ty
 	Chart.draw_simpleLine(filepath, [t1, t2])
 """
 
+infos = [ ("FM", 5, 5, "data_fm", "4b00", "2b00"), ("COC", 5, 1, "data_coc", "8000", "8000") ]
+
 def main():
-	if not len(sys.argv) is 3:
-		print ("[usage] python log.py ${log_file} ${log_file}")
-		sys.exit(1)
+#	max_budget = 30
+	for info in infos:
+		game, region_size, time_slot, data_dir, Config.max_x, Config.max_y = info
 
-	region_size = 9
-	time_slot = 10
-	max_budget = 200
+		bot_files = []
+		human_files = []
+		files = os.listdir(data_dir)
+		for i in range(0, len(files)):
+			if "_bot_" in files[i]:
+				bot_files.append(data_dir + os.sep + files[i])
+			elif "_human_" in files[i]:
+				human_files.append(data_dir + os.sep + files[i])
 
-	r1 = Raw(sys.argv[1])
-	r2 = Raw(sys.argv[2])
+		print "[Below bot files were found.]"
+		for i in range(0, len(bot_files)):
+			print "\t- " + bot_files[i]
+		print "\n[Below human files were found.]"
+		for i in range(0, len(human_files)):
+			print "\t- " + human_files[i]
 
-        def linear_recover(x):
-            return x+1
-        def exp_recover(x):
-            if x == 0:
-                return 1
-            else:
-                return x*2
+		botRaws = []
+		humanRaws = []
+		for i in range(0, len(bot_files)):
+			botRaws.append(Raw(bot_files[i]))
+			botRaws[-1].setRegion(region_size, region_size)
+		for i in range(0, len(human_files)):
+			humanRaws.append(Raw(human_files[i]))
+			humanRaws[-1].setRegion(region_size, region_size)
 
-        a = Analyzer(RESULT_DIR)
-        a.touch_density(time_slot, r1, "bot", r2, "human")
-        a.touch_activation(time_slot, r1, "bot", r2, "human")
-        a.score_rest(time_slot, linear_recover, r1, "bot", r2, "human")
-        a.budget(time_slot, max_budget, exp_recover, r1, "bot", r2, "human")
+		def linear_recover(x):
+			return x+1
+		def exp_recover(x):
+			if x == 0:
+				return 1
+			else:
+				return x*3
 
+		a = Analyzer(RESULT_DIR)
+	#	a.touch_density(time_slot, botRaws, humanRaws)
+	#	a.touch_activation(time_slot, botRaws, humanRaws)
+	#	a.score_rest(time_slot, linear_recover, botRaws, humanRaws)
+	#	a.budget(time_slot, max_budget, linear_recover, botRaws, humanRaws)
+	#	a.shift(time_slot, botRaws, humanRaws)
+	#	a.actRatio(time_slot, [botRaws[0],], [humanRaws[0],])
+	#	a.actChanges(time_slot, [botRaws[0]], [humanRaws[0]])
+#		a.restRatio(game, time_slot, botRaws, humanRaws)
+	#	a.distributionAnalyzer(time_slot, botRaws, humanRaws)
+		a.regionAnalyzerByTime(game, botRaws[0])
+#		a.regionAnalyzerByContinuous(game, time_slot, botRaws, humanRaws)
+#		a.regionSimilarityByContinuous(game, time_slot, region_size, botRaws, humanRaws)
+	#	a.actSeqNum(time_slot, [botRaws[1]], [humanRaws[2]])
+	#	a.regionSimilarityByTime(time_slot, time_slot, region_size, botRaws, humanRaws)
+#		a.mixedFeature(time_slot, region_size, botRaws, humanRaws)
+#		a.restTimeDistribution(game, time_slot, botRaws, humanRaws)
+	#	a.restSimOverTime(time_slot, botRaws, humanRaws)
+	#	a.touchSimOverTime(time_slot, region_size, botRaws, humanRaws)
+	
 if __name__ == "__main__":
 	main()
 

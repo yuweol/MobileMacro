@@ -44,6 +44,18 @@ class TimeCluster():
 			densities.append(density)
 		return times, densities
 
+	def getTouches(self, sTime, eTime):
+		sIdx = sTime / self.time_slot
+		eIdx = eTime / self.time_slot
+		if eIdx > self.nodes[-1].endTime:
+			eIdx = self.nodes[-1].endTime
+
+		touches = []
+		for i in range(sIdx, eIdx):
+			touches.append(self.nodes[i].nodes)
+
+		return touches
+
 	def __str__(self):
 		ret = ""
 		for i in range(0, len(self.nodes)):

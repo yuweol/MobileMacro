@@ -210,33 +210,42 @@ class Raw():
 				x_coord = token.value
 				x_time = token.time - init_time
 			elif (x_coord == None) and (action == "ABS_MT_POSITION_Y"):
-				raise RuntimeError("No X coord before Y coord (token index : " + str(i) + ")")
+				self.nodes.append(\
+					RawNode(token.time - init_time, "0x{:02x}".format(self.nodes[-1].x), token.value))
 			elif (x_coord != None) and (action == "ABS_MT_POSITION_X"):
-				raise RuntimeError("No Y coord (token index : " + str(i) + ")")
+				self.nodes.append(\
+					RawNode(x_time, x_coord, "0x{:02x}".format(self.nodes[-1].y)))
 			elif (x_coord != None) and (action == "ABS_MT_POSITION_Y"):
 				y_time = token.time - init_time
 				if x_time != y_time:
-					raise RuntimeError("X and Y coord has different time")
-				self.nodes.append(\
-					RawNode(x_time, x_coord, token.value))
+					self.nodes.append(\
+						RawNode(x_time, x_coord, "0x{:02x}".format(self.nodes[-1].y)))
+					self.nodes.append(\
+						RawNode(y_time, x_coord, token.value))
+				else:
+					self.nodes.append(\
+						RawNode(x_time, x_coord, token.value))
 				x_coord = None
 			i += 1
 
 	def setRegion(self, size_x, size_y):
-		max_x = int(Config.max_coord, 16)
-		max_y = int(Config.max_coord, 16)
+		max_x = int(Config.max_x, 16)
+		max_y = int(Config.max_y, 16)
 		unit_x = math.ceil(float(max_x / size_x))
 		unit_y = math.ceil(float(max_y / size_y))
 		for i in range(0, len(self.nodes)):
 			region_x = int(self.nodes[i].x / unit_x)
-			if region_x == unit_x:
+			if region_x == size_x:
 				region_x -= 1
 			region_y = int(self.nodes[i].y / unit_y)
-			if region_y == unit_y:
+			if region_y == size_y:
 				region_y -= 1
 			
 			if (region_x >= size_x) or (region_y >= size_y):
-				raise RuntimeError("unexpected")
+				if region_x >= size_x:
+					region_x = size_x - 1
+				if region_y >= size_y:
+					region_y = size_y - 1
 
 			region = (region_y * size_x) + region_x
 			self.nodes[i].region = region
